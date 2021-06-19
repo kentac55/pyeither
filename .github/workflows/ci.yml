@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  - push
+
+jobs:
+  lint:
+    strategy:
+      matrix:
+        python-version:
+          # - 3.7
+          # - 3.8
+          - 3.9
+        os:
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Poetry
+        uses: snok/install-poetry@v1.1.6
+        with:
+          version: 1.1.6
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v2
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+      - name: Run lint
+        run: make lint
+      - name: Run test
+        run: make test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          files: ./coverage.xml
+          flags: s
+          fail_ci_if_error: true
+          verbose: true

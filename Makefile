@@ -8,7 +8,7 @@ help: ## Show this message
 .PHONY: lint
 lint: ## Run linters
 	@poetry run mypy --strict -p pyeither -p tests
-	@poetry run black --check
+	@poetry run black --check .
 	@poetry run isort -c .
 	@poetry run pylint pyeither
 
