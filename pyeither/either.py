@@ -210,6 +210,7 @@ class AsyncRight(AsyncEither[_A, _B1, _B2], ABC):
         return True
 
 
+@final
 class _AsyncRightMap(AsyncRight[_A, _B1, _B2]):
     def __init__(self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], _B2]):
         self._v = v
@@ -219,6 +220,7 @@ class _AsyncRightMap(AsyncRight[_A, _B1, _B2]):
         return (await self._v.force()).map(self._f)
 
 
+@final
 class _AsyncRightMapA(AsyncRight[_A, _B1, _B2]):
     def __init__(
         self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], Awaitable[_B2]]
@@ -232,6 +234,7 @@ class _AsyncRightMapA(AsyncRight[_A, _B1, _B2]):
         return Right[_A, _B2](await x._right)  # pylint: disable=protected-access
 
 
+@final
 class _AsyncRightFlatMap(AsyncRight[_A, _B1, _B2]):
     def __init__(
         self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], Either[_A, _B2]]
@@ -243,6 +246,7 @@ class _AsyncRightFlatMap(AsyncRight[_A, _B1, _B2]):
         return (await self._v.force()).flatmap(self._f)
 
 
+@final
 class _AsyncRightFlatMapA(AsyncRight[_A, _B1, _B2]):
     def __init__(
         self,
@@ -258,6 +262,7 @@ class _AsyncRightFlatMapA(AsyncRight[_A, _B1, _B2]):
         return await self._f(x._right)  # pylint: disable=protected-access
 
 
+@final
 class AsyncLeft(AsyncEither[_A, _B1, _B2]):
     def __init__(self, v: AsyncEither[_A, Any, _B1]) -> None:
         self._v = v
@@ -274,6 +279,7 @@ class AsyncLeft(AsyncEither[_A, _B1, _B2]):
         return await self._v.force()  # type: ignore
 
 
+@final
 class AsyncEitherBase(AsyncEither[_A, _B, _B]):
     def __init__(self, v: Either[_A, _B]) -> None:
         self._v = v
