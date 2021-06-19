@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Generic, Optional, Sequence, TypeVar, final
+from typing import Any, Awaitable, Callable, Generic, Optional, Sequence, TypeVar, final
 
 _A = TypeVar("_A")
 _A1 = TypeVar("_A1")
 _B = TypeVar("_B")
 _B1 = TypeVar("_B1")
+_B2 = TypeVar("_B2")
+_B3 = TypeVar("_B3")
 _C = TypeVar("_C")
 
 
@@ -25,16 +27,16 @@ class Either(Generic[_A, _B], ABC):
 
     @final
     def fold(self, fa: Callable[[_A], _C], fb: Callable[[_B], _C]) -> _C:
-        if self.is_left:
-            return fa(self._left)
-        else:
+        if self.is_right:
             return fb(self._right)
+        else:
+            return fa(self._left)
 
     def swap(self) -> Either[_B, _A]:
-        if self.is_left:
-            return Right(self._left)
-        else:
+        if self.is_right:
             return Left(self._right)
+        else:
+            return Right(self._left)
 
     def get_or_else(self, or_: _B) -> _B:
         if self.is_right:
@@ -66,11 +68,25 @@ class Either(Generic[_A, _B], ABC):
         else:
             return self  # type: ignore
 
+    def flatmapa(
+        self, f: Callable[[_B], Awaitable[Either[_A, _B1]]]
+    ) -> AsyncEither[_A, _B, _B1]:
+        if self.is_right:
+            return _AsyncRightFlatMapA[_A, _B, _B1](AsyncEitherBase[_A, _B](self), f)
+        else:
+            return AsyncLeft[_A, _B, _B1](AsyncEitherBase[_A, _B](self))
+
     def map(self, f: Callable[[_B], _B1]) -> Either[_A, _B1]:
         if self.is_right:
             return Right(f(self._right))
         else:
             return self  # type: ignore
+
+    def mapa(self, f: Callable[[_B], Awaitable[_B1]]) -> AsyncEither[_A, _B, _B1]:
+        if self.is_right:
+            return _AsyncRightMapA[_A, _B, _B1](AsyncEitherBase[_A, _B](self), f)
+        else:
+            return AsyncLeft[_A, _B, _B1](AsyncEitherBase[_A, _B](self))
 
     def to_seq(self) -> Sequence[_B]:
         if self.is_right:
@@ -79,7 +95,10 @@ class Either(Generic[_A, _B], ABC):
             return []
 
     def to_option(self) -> Optional[_B]:
-        return self._right if self.is_right else None
+        if self.is_right:
+            return self._right
+        else:
+            return None
 
     @property
     @abstractmethod
@@ -134,3 +153,138 @@ class Right(Either[_A, _B]):
     @property
     def is_right(self) -> bool:
         return True
+
+
+class AsyncEither(Generic[_A, _B1, _B2], ABC):
+    @property
+    @abstractmethod
+    def is_left(self) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def is_right(self) -> bool:
+        pass
+
+    @abstractmethod
+    async def force(self) -> Either[_A, _B2]:
+        pass
+
+    async def fold(self, fa: Callable[[_A], _C], fb: Callable[[_B2], _C]) -> _C:
+        return (await self.force()).fold(fa, fb)
+
+    def map(self, f: Callable[[_B2], _B3]) -> AsyncEither[_A, _B2, _B3]:
+        if self.is_right:
+            return _AsyncRightMap[_A, _B2, _B3](self, f)
+        else:
+            return self  # type: ignore
+
+    def mapa(self, f: Callable[[_B2], Awaitable[_B3]]) -> AsyncEither[_A, _B2, _B3]:
+        if self.is_right:
+            return _AsyncRightMapA[_A, _B2, _B3](self, f)
+        else:
+            return self  # type: ignore
+
+    def flatmap(self, f: Callable[[_B2], Either[_A, _B3]]) -> AsyncEither[_A, _B2, _B3]:
+        if self.is_right:
+            return _AsyncRightFlatMap[_A, _B2, _B3](self, f)
+        else:
+            return self  # type: ignore
+
+    def flatmapa(
+        self, f: Callable[[_B2], Awaitable[Either[_A, _B3]]]
+    ) -> AsyncEither[_A, _B2, _B3]:
+        if self.is_right:
+            return _AsyncRightFlatMapA[_A, _B2, _B3](self, f)
+        else:
+            return self  # type: ignore
+
+
+class AsyncRight(AsyncEither[_A, _B1, _B2], ABC):
+    @property
+    def is_left(self) -> bool:
+        return False
+
+    @property
+    def is_right(self) -> bool:
+        return True
+
+
+class _AsyncRightMap(AsyncRight[_A, _B1, _B2]):
+    def __init__(self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], _B2]):
+        self._v = v
+        self._f = f
+
+    async def force(self) -> Either[_A, _B2]:
+        return (await self._v.force()).map(self._f)
+
+
+class _AsyncRightMapA(AsyncRight[_A, _B1, _B2]):
+    def __init__(
+        self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], Awaitable[_B2]]
+    ):
+        self._v = v
+        self._f = f
+
+    async def force(self) -> Either[_A, _B2]:
+        x = (await self._v.force()).map(self._f)
+        assert x.is_right, "AsyncRight must be right."
+        return Right[_A, _B2](await x._right)  # pylint: disable=protected-access
+
+
+class _AsyncRightFlatMap(AsyncRight[_A, _B1, _B2]):
+    def __init__(
+        self, v: AsyncEither[_A, Any, _B1], f: Callable[[_B1], Either[_A, _B2]]
+    ) -> None:
+        self._v = v
+        self._f = f
+
+    async def force(self) -> Either[_A, _B2]:
+        return (await self._v.force()).flatmap(self._f)
+
+
+class _AsyncRightFlatMapA(AsyncRight[_A, _B1, _B2]):
+    def __init__(
+        self,
+        v: AsyncEither[_A, Any, _B1],
+        f: Callable[[_B1], Awaitable[Either[_A, _B2]]],
+    ) -> None:
+        self._v = v
+        self._f = f
+
+    async def force(self) -> Either[_A, _B2]:
+        x = await self._v.force()
+        assert x.is_right, "AsyncRight must be right."
+        return await self._f(x._right)  # pylint: disable=protected-access
+
+
+class AsyncLeft(AsyncEither[_A, _B1, _B2]):
+    def __init__(self, v: AsyncEither[_A, Any, _B1]) -> None:
+        self._v = v
+
+    @property
+    def is_left(self) -> bool:
+        return True
+
+    @property
+    def is_right(self) -> bool:
+        return False
+
+    async def force(self) -> Either[_A, _B2]:
+        return await self._v.force()  # type: ignore
+
+
+class AsyncEitherBase(AsyncEither[_A, _B, _B]):
+    def __init__(self, v: Either[_A, _B]) -> None:
+        self._v = v
+
+    @property
+    def is_left(self) -> bool:
+        return self._v.is_left
+
+    @property
+    def is_right(self) -> bool:
+        return self._v.is_right
+
+    async def force(self) -> Either[_A, _B]:
+        return self._v
